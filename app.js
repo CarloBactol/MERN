@@ -8,6 +8,7 @@ const session =  require("express-session");
 const passport = require("passport");
 const passportLocalMongoose = require("passport-local-mongoose");
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const findOrCreate = require('mongoose-findorcreate')
 
 
 
@@ -43,11 +44,13 @@ mongoose.connect(
 const userSchema = new mongoose.Schema({
   email: String,
   password: String,
-  googleId: String
+  googleId: String,
+  secret: String
 });
 
 // Add plugin 
 userSchema.plugin(passportLocalMongoose);
+userSchema.plugin(findOrCreate);
 
 // Create a model based on the schema
 const User = mongoose.model("User", userSchema);
@@ -56,9 +59,75 @@ const User = mongoose.model("User", userSchema);
 passport.use(User.createStrategy());
 
 // passport serialized and deserialize
-passport.serializeUser(User.serializeUser());
-passport.deserializeUser(User.deserializeUser());
+// passport.serializeUser(User.serializeUser());
+// passport.deserializeUser(User.deserializeUser());
 
+passport.serializeUser(function(user, done) {
+  done(null, user);
+  });
+  
+  passport.deserializeUser(function(user, done) {
+  done(null, user);
+  });
+
+
+// Google Auth Strategy
+passport.use(new GoogleStrategy({
+  clientID: process.env.GOOGLE_CLIENT_ID,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  callbackURL: "https://carlobactol-redesigned-space-guide-6xvvxp54v5c475v-3000.preview.app.github.dev/auth/google/secret",
+  userProfileURL: "https://www.googleapis.com/oauth2/v3/userinfo"
+},
+function(accessToken, refreshToken, profile, cb) {
+  User.findOrCreate({ username: profile.displayName,  googleId: profile.id }, function (err, user) {
+    return cb(err, user);
+  });
+}
+));
+
+// Google Auth
+app.get("/auth/google",
+  passport.authenticate("google", { scope: ["profile"] }));
+
+app.get("/auth/google/secret", 
+  passport.authenticate("google", { failureRedirect: "/login" }),
+  function(req, res) {
+    // Successful authentication, redirect secret.
+    res.redirect("/secret");
+  });
+
+  // Submit
+  app.get("/submit",  (req, res) => {
+    try {
+      if(req.isAuthenticated()){
+       res.render("submit");
+      }else{
+       res.redirect("/login");
+      }
+     } catch (error) {
+       res.status(500).json({ error: "An error occurred" });
+     }
+  });
+
+
+   // Submit
+   app.post("/submit", async (req, res) => {
+    try {
+      console.log(req.user.id);
+      const isUser = await User.findOne({id: req.user.id}).exec()
+      if(isUser){
+        console.log("Yes");
+        isUser.secret = req.body.secret
+        await isUser.save();
+        res.redirect("/secret");
+      }else{
+        console.log("Not Authorize");
+        res.render("login")
+      }
+    } catch (error) {
+      console.log(error);
+    }
+  });
 
 
 // Home
@@ -110,8 +179,8 @@ app.post("/register", async (req, res) => {
   User.register({username: req.body.username, active: false}, req.body.password, function(err, user) {
     if (err) { 
       console.log(err);
-      console.log("Err");
-      // res.redirect("/login");
+      console.log("Already Register Account");
+      res.redirect("login");
      }else{
       passport.authenticate("local")(req, res, function(){
         console.log("Yes");
@@ -121,6 +190,8 @@ app.post("/register", async (req, res) => {
   });
 
 });
+
+
 
 
 // ========================== Login ======================
@@ -158,6 +229,7 @@ app.post("/login",  (req, res) => {
   req.login(users, function(err){
     if(err){
       console.log(err);
+      res.redirect("/login");
     }else{
       passport.authenticate("local")(req, res, function(){
         res.redirect("/secret");
@@ -168,19 +240,15 @@ app.post("/login",  (req, res) => {
 });
 
 
-// Google Auth Strategy
-passport.use(new GoogleStrategy({
-  clientID: process.env.GOOGLE_CLIENT_ID,
-  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: "http://www.example.com/auth/google/secret",
-  userProfileURL: "https://www.googleapis.com/oauth2/v3/userinfo"
-},
-function(accessToken, refreshToken, profile, cb) {
-  User.findOrCreate({  googleId: profile.id }, function (err, user) {
-    return cb(err, user);
+// Logout
+app.get("/logout", function(req, res, next) {
+  req.logout(function(err) {
+    if (err) { return next(err); }
+    res.redirect('/login');
   });
-}
-));
+});
+
+
 
 
 // Start the server
