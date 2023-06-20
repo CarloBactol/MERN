@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
 const bodyParser = require("body-parser");
@@ -6,6 +7,7 @@ const md5 =  require("md5");
 const session =  require("express-session");
 const passport = require("passport");
 const passportLocalMongoose = require("passport-local-mongoose");
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
 
 
 
@@ -41,6 +43,7 @@ mongoose.connect(
 const userSchema = new mongoose.Schema({
   email: String,
   password: String,
+  googleId: String
 });
 
 // Add plugin 
@@ -55,6 +58,8 @@ passport.use(User.createStrategy());
 // passport serialized and deserialize
 passport.serializeUser(User.serializeUser());
 passport.deserializeUser(User.deserializeUser());
+
+
 
 // Home
 app.get("/", async (req, res) => {
@@ -161,6 +166,21 @@ app.post("/login",  (req, res) => {
   });
 
 });
+
+
+// Google Auth Strategy
+passport.use(new GoogleStrategy({
+  clientID: process.env.GOOGLE_CLIENT_ID,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  callbackURL: "http://www.example.com/auth/google/secret",
+  userProfileURL: "https://www.googleapis.com/oauth2/v3/userinfo"
+},
+function(accessToken, refreshToken, profile, cb) {
+  User.findOrCreate({  googleId: profile.id }, function (err, user) {
+    return cb(err, user);
+  });
+}
+));
 
 
 // Start the server
